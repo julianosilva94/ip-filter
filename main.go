@@ -8,14 +8,17 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type IpRange struct {
 	Start uint64
-	End uint64
+	End   uint64
 }
 
 func main() {
+	start := time.Now()
+
 	file, err := os.Open(os.Args[1])
 
 	if err != nil {
@@ -24,9 +27,11 @@ func main() {
 
 	defer file.Close()
 
+	scanner := bufio.NewScanner(file)
+	counter := 0
+
 	ipRanges := []IpRange{}
 
-	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		line := scanner.Text()
 		res := strings.Split(line, "-")
@@ -42,111 +47,46 @@ func main() {
 			log.Fatal(err)
 		}
 
-		found := false
-		for index , ipRange := range ipRanges {
-			if isIpRangesInConflict(IpRange{start, end}, ipRange) {
-				ipRanges[index] = mergeIpRanges(IpRange{start, end}, ipRange)
-				found = true
-				break
-			}
-		}
+		ipRanges = append(ipRanges, IpRange{start, end})
 
-		if !found {
-			ipRanges = append(ipRanges, IpRange{start, end})
-		}
+		counter++
 	}
 
+	ipRanges = mergeRanges(ipRanges)
+
+	//fmt.Println(ipRanges)
+	fmt.Println("Original filters: ", counter)
+	fmt.Println("Resulting filters: ", len(ipRanges))
+
+	elapsed := time.Since(start)
+	fmt.Println("Time elapsed: ", elapsed)
+}
+
+func mergeRanges(ipRanges []IpRange) []IpRange {
+	// sort by start range
 	sort.Slice(ipRanges[:], func(i, j int) bool {
 		return ipRanges[i].Start < ipRanges[j].Start
 	})
 
-	for {
-		size := len(ipRanges)
-		lastI := 0
+	mergedIpRanges := []IpRange{}
 
-		if size > 1 {
-			found := false
+	for i, ipRange := range ipRanges {
+		if i == 0 {
+			mergedIpRanges = append(mergedIpRanges, ipRange)
+			continue
+		}
 
-			for i := lastI; i < size; i++ {
-				prev := ipRanges[i];
+		lastMergedIndex := len(mergedIpRanges) - 1
+		lastMerged := mergedIpRanges[lastMergedIndex]
 
-				for j := i + 1; j < size; j++ {
-					actual := ipRanges[j]
-
-					if isIpRangesInConflict(prev, actual) {
-						found = true
-						ipRanges[i] = mergeIpRanges(prev, actual)
-						lastI = i+1
-					}
-
-					if found {
-						ipRanges = append(ipRanges[:j], ipRanges[j+1:]...)
-						break
-					}
-				}
-
-				if found {
-					break
-				}
-			}
-
-			if !found {
-				break
-			}
-
+		if lastMerged.End < ipRange.Start {
+			mergedIpRanges = append(mergedIpRanges, ipRange)
 		} else {
-			break
+			if mergedIpRanges[lastMergedIndex].End < ipRange.End {
+				mergedIpRanges[lastMergedIndex].End = ipRange.End
+			}
 		}
 	}
 
-	fmt.Println(ipRanges)
-}
-
-func isIpRangesInConflict(a IpRange, b IpRange) bool {
-	// a overlap b in left side
-	if a.Start < b.Start && a.End > b.Start && a.End < b.End {
-		return true
-	}
-
-	if b.Start < a.Start && b.End > a.Start && b.End < a.End {
-		return true
-	}
-
-	// a overlap b in right side
-	if a.Start > b.Start && a.Start < b.End && a.End > b.End {
-		return true
-	}
-
-	if b.Start > a.Start && b.Start < a.End && b.End > a.End {
-		return true
-	}
-
-	// a is inside b
-	if a.Start > b.Start && a.End < b.End {
-		return true
-	}
-
-	if b.Start > a.Start && b.End < a.End {
-		return true
-	}
-
-	return false
-}
-
-func mergeIpRanges(a IpRange, b IpRange) IpRange {
-	ipRange := IpRange{}
-
-	if a.Start <= b.Start {
-		ipRange.Start = a.Start
-	} else {
-		ipRange.Start = b.Start
-	}
-
-	if a.End >= b.End {
-		ipRange.End = a.End
-	} else {
-		ipRange.End = b.End
-	}
-
-	return ipRange
+	return mergedIpRanges
 }
